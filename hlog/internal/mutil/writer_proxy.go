@@ -152,8 +152,13 @@ func (f *flushWriter) Flush() {
 	fl.Flush()
 }
 
-// fancyPushWriter is a fancyWriter that additionally satisfies http.Pusher,
-// for the common case of an HTTP/2 ResponseWriter that supports server push.
+// fancyPushWriter is a fancyWriter that additionally satisfies http.Pusher --
+// used when the underlying ResponseWriter implements Pusher on top of the
+// full CloseNotifier+Flusher+Hijacker+ReaderFrom set. net/http's own HTTP/2
+// ResponseWriter doesn't implement Hijacker or ReaderFrom, so it never hits
+// this branch (see flushPushWriter for that realistic shape); this one is
+// for a custom or composed ResponseWriter that happens to implement all
+// five interfaces at once.
 type fancyPushWriter struct {
 	fancyWriter
 }
