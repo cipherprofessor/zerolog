@@ -34,12 +34,19 @@ func WrapWriter(w http.ResponseWriter) WriterProxy {
 	_, fl := w.(http.Flusher)
 	_, hj := w.(http.Hijacker)
 	_, rf := w.(io.ReaderFrom)
+	_, ps := w.(http.Pusher)
 
 	bw := basicWriter{ResponseWriter: w}
 	if cn && fl && hj && rf {
+		if ps {
+			return &fancyPushWriter{fancyWriter{bw}}
+		}
 		return &fancyWriter{bw}
 	}
 	if fl {
+		if ps {
+			return &flushPushWriter{flushWriter{bw}}
+		}
 		return &flushWriter{bw}
 	}
 	return &bw
@@ -145,10 +152,35 @@ func (f *flushWriter) Flush() {
 	fl.Flush()
 }
 
+// fancyPushWriter is a fancyWriter that additionally satisfies http.Pusher,
+// for the common case of an HTTP/2 ResponseWriter that supports server push.
+type fancyPushWriter struct {
+	fancyWriter
+}
+
+func (f *fancyPushWriter) Push(target string, opts *http.PushOptions) error {
+	ps := f.basicWriter.ResponseWriter.(http.Pusher)
+	return ps.Push(target, opts)
+}
+
+// flushPushWriter is a flushWriter that additionally satisfies http.Pusher.
+// This is the realistic shape of an HTTP/2 ResponseWriter, which supports
+// Flusher and Pusher but not Hijacker or ReaderFrom.
+type flushPushWriter struct {
+	flushWriter
+}
+
+func (f *flushPushWriter) Push(target string, opts *http.PushOptions) error {
+	ps := f.basicWriter.ResponseWriter.(http.Pusher)
+	return ps.Push(target, opts)
+}
+
 var (
 	_ http.CloseNotifier = &fancyWriter{}
 	_ http.Flusher       = &fancyWriter{}
 	_ http.Hijacker      = &fancyWriter{}
 	_ io.ReaderFrom      = &fancyWriter{}
 	_ http.Flusher       = &flushWriter{}
+	_ http.Pusher        = &fancyPushWriter{}
+	_ http.Pusher        = &flushPushWriter{}
 )
